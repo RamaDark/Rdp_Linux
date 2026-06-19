@@ -1,0 +1,45 @@
+name: Linux RDP
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Install XFCE & RDP
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xfce4 xfce4-goodies xrdp
+        sudo systemctl enable xrdp
+        sudo systemctl start xrdp
+
+    - name: Set Password User
+      run: |
+        echo "runner:passwordkamu123" | sudo chpasswd
+
+    - name: Install ngrok
+      run: |
+        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+        echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+        sudo apt update && sudo apt install ngrok
+
+    - name: Jalankan ngrok
+      env:
+        NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+      run: |
+        ngrok config add-authtoken $NGROK_AUTHTOKEN
+        ngrok tcp 3389 &
+        sleep 10
+        curl -s http://localhost:4040/api/tunnels | python3 -c "
+        import sys, json
+        data = json.load(sys.stdin)
+        print(data['tunnels'][0]['public_url'])
+        "
+
+    - name: Keep Alive
+      run: sleep 21600
