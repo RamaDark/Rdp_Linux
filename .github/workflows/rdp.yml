@@ -22,7 +22,7 @@ jobs:
       run: |
         echo "runner:passwordkamu123" | sudo chpasswd
 
-    - name: Install & Jalankan ngrok
+    - - name: Install & Jalankan ngrok
       env:
         NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
       run: |
@@ -31,12 +31,16 @@ jobs:
         sudo apt update && sudo apt install -y ngrok
         ngrok config add-authtoken $NGROK_AUTHTOKEN
         ngrok tcp 3389 &
-        sleep 15
-        curl -s http://localhost:4040/api/tunnels | python3 -c "
-        import sys, json
-        data = json.load(sys.stdin)
-        print('ALAMAT RDP:', data['tunnels'][0]['public_url'])
-        "
+        sleep 30
+        for i in {1..10}; do
+          RESULT=$(curl -s http://localhost:4040/api/tunnels)
+          if [ ! -z "$RESULT" ]; then
+            echo "ALAMAT RDP: $(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])")"
+            break
+          fi
+          echo "Menunggu ngrok... ($i)"
+          sleep 5
+        done
 
     - name: Keep Alive
       run: sleep 21600
