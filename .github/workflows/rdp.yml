@@ -1,6 +1,6 @@
 name: Linux RDP
 
-on: [push, workflow_dispatch]
+on: [workflow_dispatch]
 
 jobs:
   build:
@@ -11,36 +11,45 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Install XFCE & RDP
+    - name: Install Desktop & VNC
       run: |
         sudo apt-get update
-        sudo apt-get install -y xfce4 xfce4-goodies xrdp
-        sudo systemctl enable xrdp
-        sudo systemctl start xrdp
+        sudo apt-get install -y xfce4 xfce4-goodies tightvncserver novnc websockify
 
-    - name: Set Password User
+    - name: Set Password VNC
       run: |
-        echo "runner:passwordkamu123" | sudo chpasswd
+        mkdir -p ~/.vnc
+        echo "passwordkamu123" | vncpasswd -f > ~/.vnc/passwd
+        chmod 600 ~/.vnc/passwd
 
-    - name: Install & Jalankan ngrok
-      env:
-        NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Jalankan VNC Server
       run: |
-        curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-        echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-        sudo apt update && sudo apt install -y ngrok
-        ngrok config add-authtoken $NGROK_AUTHTOKEN
-        ngrok tcp 3389 &
-        sleep 30
+        export USER=runner
+        vncserver :1 -geometry 1280x800 -depth 24
+        sleep 5
+
+    - name: Jalankan noVNC (web access)
+      run: |
+        /usr/share/novnc/utils/novnc_proxy --vnc localhost:5901 --listen 6080 &
+        sleep 5
+
+    - name: Install & Jalankan Cloudflare Tunnel
+      run: |
+        wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+        sudo dpkg -i cloudflared-linux-amd64.deb
+        cloudflared tunnel --url http://localhost:6080 > cloudflared.log 2>&1 &
+        sleep 15
         for i in {1..10}; do
-          RESULT=$(curl -s http://localhost:4040/api/tunnels)
-          if [ ! -z "$RESULT" ]; then
-            echo "ALAMAT RDP: $(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])")"
+          if grep -q "trycloudflare.com" cloudflared.log; then
+            echo "=========================================="
+            echo "BUKA ALAMAT INI DI BROWSER:"
+            grep -o 'https://[a-zA-Z0-9.-]*trycloudflare.com' cloudflared.log | head -1
+            echo "=========================================="
             break
           fi
-          echo "Menunggu ngrok... ($i)"
+          echo "Menunggu tunnel... ($i)"
           sleep 5
         done
 
     - name: Keep Alive
-      run: sleep 21600
+      run: sleep 21000
